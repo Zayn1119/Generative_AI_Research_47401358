@@ -1,0 +1,613 @@
+Declare Sub QVBlock_Change_Light
+Declare Sub QVBlock_7
+Declare Sub QVBlock_6
+Declare Sub QVBlock_5
+Declare Sub QVBlock_4
+Declare Sub QVBlock_3
+Declare Sub QVBlock_2
+Declare Sub QVBlock_1
+
+
+Option Explicit
+
+sub startup
+
+'  *** Display Format ***
+DistanceUnits = MM
+CoordinateMode = CART
+ResolutionMode = DECIMALS_6
+AngleRange = ZERO_TO_360
+AngleUnits = DECIMAL_DEGREES_6
+
+'  *** Lens in Use ***
+Lens.Select Label:="5X (QVHR Objective)"
+
+'  *** Results Formatting ***
+Results.ShowFeatureTypeInHdr = TRUE
+Results.ShowFeatureLabelInHdr = TRUE
+Results.ShowFeatureIDInHdr = TRUE
+Results.ShowNumOfPointsInHdr = TRUE
+Results.ShowColumnLabels = TRUE
+Results.FormatColumns ELEMENT, ACTUAL, NOMINAL, DEVIATION, UPTOL, LOWTOL, PASSFAIL
+
+'  *** Results Messages ***
+Results.ShowAlignmentMsg = FALSE
+Results.ShowUnitsChangeMsg = FALSE
+Results.ShowConstructionMsg = FALSE
+Results.ShowErrorMsg = FALSE
+
+'  *** Results Data Reporting ***
+Results.ReportLevel = ALLDATA
+
+'  *** Results Logging ***
+Results.LogFileName = ""
+Results.LogToFile = FALSE
+Results.LogToCOM1 = FALSE
+Results.LogToCOM2 = FALSE
+
+'  *** Run Mode Options ***
+BreakOnErrors = FALSE
+ShowImageTools = TRUE
+ShowTravelLimitWarnings = TRUE
+AutoRunSmartRecovery = TRUE
+
+'  *** Smart Recovery Options ***
+Video.SmartRecovery.Focus = TRUE
+Video.SmartRecovery.FocusRange = 1
+Video.SmartRecovery.Lighting = TRUE
+Video.SmartRecovery.LightingRange = 1
+Video.SmartRecovery.ToolPosition = TRUE
+Video.SmartRecovery.ToolPositionRange = 1
+Video.SmartRecovery.ToolAngle = TRUE
+Video.SmartRecovery.ToolAngleRange = 1
+Video.SmartRecovery.EdgeStrength = TRUE
+Video.SmartRecovery.EdgeStrengthRange = 1
+
+'  *** Restore MCS ***
+PCS.RestoreMCS
+
+'  *** Reference Plane ***
+ReferencePlane = XY_PLANE
+
+'  *** Measuring Device ***
+MeasuringDevice = QV_VIDEO
+
+'  *** Define Home Position in Machine Coordinate System ***
+Stage.SetMcsHome   X:=334.284876438, Y:=345.168959639, Z:=8.720278508
+CylUsesRefPlane = TRUE
+
+
+end sub   'startup
+
+
+'########################################令變數##########################################################################################
+
+dim IPPName as String
+dim spec as double
+dim Coax_value as double
+dim stage_value as double
+dim ring_value as double
+dim focus_W, focus_H as double
+
+dim step1_x as double
+dim step1_y as double
+dim step1_z as double
+dim step3_x as double
+dim step3_y as double
+dim step3_z as double
+dim step4_x as double
+dim step4_y as double
+dim step4_z as double
+
+dim PT_address as string                     'Pattern路徑
+
+dim Angle_Height as double                   '環光高度
+
+dim MMPart as string
+dim Location_x as double
+dim Location_y as double
+
+dim PartNO as string
+dim LotNO as string
+dim PanelNO as integer
+dim RawNO as integer
+dim UnitNO as integer
+
+dim Big_TH as double
+dim Big_THR as double                            'Pad 邊界條件 
+dim Big_THS as double
+dim Small_TH as double
+dim Small_THR as double                          'Via 邊界條件
+dim Small_THS as double
+
+dim Big_R1, Big_R2, Small_R1, Small_R2 as double        'Pad & Via 半徑
+
+dim xcl as object     ' excel物件化
+
+
+dim i as integer     '輸入層別使用
+
+
+dim p, q, o, w, ok as integer
+dim Deflect as integer                 '判斷偵測結果與否
+dim Light_setting                      '光源條件切換
+
+
+dim dxx as double
+dim dyy as double
+
+dim measurement_date as string
+dim roundness_Via as double '真圓度複測
+dim roundness_Pad as double '真圓度複測
+
+
+dim measurement_hour as integer
+dim measurement_minute as integer
+
+dim data_output_dir as string
+dim excel_input_dir as string
+
+
+dim temp as double
+dim OPName as string
+
+dim panelsize as string
+
+
+'####################################################程式開始##############################################################################
+
+
+sub Main    'start of main subroutine
+
+call startup
+
+measurement_date=format(Month(Now),"00") & format(Day(Now),"00")
+
+'#####################################################資料夾位置#######################################
+
+data_output_dir = "D:\Data\"
+excel_input_dir = "C:\Users\ibc\Desktop\LDL自動化程式\"
+PT_address = "C:\Users\Public\Documents\QVPAK\Patterns\Pad6.ptn"          '特徵圖路徑
+
+'#########################################################
+
+On Error Resume Next '使用錯誤觸理機制(避免重複建立資料匣)
+
+MkDir data_output_dir & measurement_date  '建立資料匣
+
+print ("量測起始時間:" & date+time)   '開始時間
+
+measurement_hour=format(hour(now),"00")
+
+measurement_minute=format(minute(now),"00")
+
+
+Set xcl = GetObject(excel_input_dir & "(自動化)LDL對準度(Via to Pad Alignment).xlsm")           'Excel參數使用
+
+With xcl.Sheets("raw data")  '用這個　Sheet
+
+
+xcl.sheets("raw data").unprorawdat       '解保護 #########################################
+
+   
+xcl.sheets("raw data").CSV_input              '從CSV中取得料品資訊
+
+PartNO = xcl.sheets("raw data").cells(78,2)
+LotNO = xcl.sheets("raw data").cells(79,2)
+PanelNO = xcl.sheets("raw data").cells(80,2)
+i = xcl.sheets("raw data").cells(84,2)
+
+
+Big_TH = 125.68
+Big_THR = 0.3
+Big_THS = 54
+Small_TH = 193                       'Pad & Via 邊界條件
+Small_THR = 0.55
+Small_THS = 47.5
+ring_value = 0.15
+
+Big_R1 = 0.195
+Big_R2 = 0.097                       'Pad & Via 半徑
+Small_R1 = 0.068                   
+Small_R2 = 0.0019
+
+Angle_Height = 0                   '環光高度
+Light_setting = 0                  '光源設定
+
+
+focus_W = 0.5                      '對焦寬高
+focus_H = 0.4
+
+print ("料號:" & PartNO)
+print ("批號:" & LotNO)
+print ("板號:" & PanelNO)
+
+If i>9 then
+print ("層別:L" & i)
+else
+print ("層別:L0" & i)
+End If
+
+
+end with
+
+
+
+'###################################################從 Excel 取得資料################################################
+
+
+If Left(PartNO,7) = "3130031" Then
+MMPart = left(PartNO,8)
+Else
+MMPart = left(PartNO,7)
+End If
+
+
+
+With xcl.Sheets(MMPart)  '用這個　Sheet
+
+IPPName=.cells(1,i+2)
+spec=.cells(3,i+2).value
+Coax_value=.cells(4,i+2).value
+stage_value=.cells(5,i+2).value
+step1_x=.cells(7,i+2).value
+step1_y=.cells(8,i+2).value
+step1_z=.cells(9,i+2).value
+step3_x=.cells(10,i+2).value
+step3_y=.cells(11,i+2).value
+step3_z=.cells(12,i+2).value
+step4_x=.cells(13,i+2).value
+step4_y=.cells(14,i+2).value
+step4_z=.cells(15,i+2).value
+
+
+end with
+
+'###################################################量測程式開始################################################
+restart:
+
+Call   QVBlock_1
+Call   QVBlock_2
+
+If Deflect = 3 Then
+Call   QVBlock_Change_Light
+GoTo restart
+End If
+
+Call   QVBlock_3
+Call   QVBlock_4
+
+
+TolDB.CreateUpLoTol   Up:=spec, Lo:=0.000000000, Label:="上下限公差-1"     ' parameter spec for alignment
+TolDB.CreateUpLoTol   Up:=spec, Lo:=spec*(-1), Label:="上下限公差-2"       ' parameter spec for dx & dy   
+
+
+With xcl.Sheets("raw data")   '與raw data sheet連結
+
+
+RawNO = 2       '用於Excel資料收集raw數管控 
+
+
+Location_x = 0
+Location_y = 0
+
+
+'#################################################主程式迴圈##########################################################
+
+PCS.Save   
+PCS.Save   
+' open an array step loop iteration 1 to step between parts (ie between PCS's) and iteration 2 to step between parts (ie between PCS's)
+Dim unit as Long
+StepLoop.OpenArray DX1:=0.000000000, DY1:=0.000000000, DZ1:=0.000000000, BetweenParts1:=true, Iteration1:=16, DX2:=0.000000000, DY2:=0.000000000, DZ2:=0.000000000, BetweenParts2:=true, Iteration2:=1, SkipList:=""
+For unit = 1 to 16
+
+If not StepLoop.IsIterationSkipped Then
+
+
+Call   QVBlock_5
+Call   QVBlock_6
+Call   QVBlock_7
+
+
+End If
+
+Location_x = xcl.Sheets(MMPart).cells(14+Unit*2,i+2).value
+Location_y = xcl.Sheets(MMPart).cells(15+Unit*2,i+2).value
+
+RawNO = RawNO + 1
+
+StepLoop.Next
+Next Unit
+StepLoop.Close
+
+'###############################################################################################################################
+
+'########################################歸位還原#########################################
+
+
+PCS.RestoreMCS
+Light.PRL.SetAll   Coax:=0.00, Stage:=0.00, Back:=0.00, Front:=0.00, Right:=0.00, Left:=0.00, Angle:=0.00, Color:=qvRed
+Stage.MoveTo   X:=0, Y:=650, Z:=254
+
+
+
+'##################################鏡頭回歸############################
+print ("量測結束時間:" & date+time)
+measurement_hour=format(hour(now),"00")-measurement_hour
+measurement_minute=format(minute(now),"00")-measurement_minute
+print ("量測花費時間:" & measurement_hour & "小時 , " & measurement_minute & "分鐘")
+
+
+
+'##################################流水號更新############################
+
+xcl.sheets("raw data").data_check '檢查+上拋
+xcl.sheets("raw data").prorawdat  '保護########################################################
+
+end with        '關閉sheet
+
+
+
+end sub   'Main
+
+
+Private Sub QVBlock_1
+Measure.Circle Label:="Start", ProjPlane:=NO_PLANE, Outlier:=0
+Video.ChangeToImageContext   X:=step1_x, Y:=step1_y, Z:=step1_z, Coax:=Coax_value, Stage:=stage_value, Back:=ring_value, Front:=ring_value, Right:=ring_value, Left:=ring_value, Angle:=Angle_Light, Color:= qvRed, NomMag:=5
+FocusTool.SetMode   FocusType:=SURFACE_ROTATE, Speed:=MED, Range:=5.000000000
+FocusTool.Run  X:=step1_x, Y:=step1_y, W:=focus_w, H:=focus_h, Angle:=Angle_Light
+CentroidTool.SetFilter   Alg:=DYNAMIC_THRESH, THLow:=0.928571, THHigh:=1.000000, THSize:=0.001697
+CentroidTool.Run   X:=step1_x, Y:=step1_y, W:=0.086123519, H:=0.046975234, Angle:=Angle_Light
+Measure.EndMeas
+
+End Sub   'QVBlock_1
+
+
+Private Sub QVBlock_2
+
+Video.ChangeToImageContext   X:=step1_x, Y:=step1_y, Coax:=Coax_value, Stage:=stage_value, Back:=ring_value, Front:=ring_value, Right:=ring_value, Left:=ring_value, Angle:=Angle_Light, Color:= qvRed, NomMag:=5
+
+
+
+'尋找靶點
+for p = -3 to 5
+for q = -3 to 5
+
+
+
+count = count+1     '從1開始計數 
+
+Measure.Point Label:="點-1" & count, ProjPlane:=NO_PLANE, PointType:=AVERAGE_POINT
+PatternTemplate.Import   PT_address
+
+'鏡頭畫面為「原始座標+隨著迴圈參數改變固定位移」
+'p,q隨迴圈移動，一次移動半個畫面（0.5*dx, 0.5*dy）
+'此為鏡頭往上&往右尋找
+Video.ChangeToImageContext   X:=step1_x+dx*0.25*p, Y:=step1_y+dy*0.25*q, Coax:=Coax_value, Stage:=stage_value, Back:=ring_value, Front:=ring_value, Right:=ring_value, Left:=ring_value, Angle:=Angle_Light, Color:= qvRed, NomMag:=5.000000
+
+PatternTool.SetMode   Speed:=2, Accuracy:=1, CertaintyThr:=46, AcceptThr:=46, StartAngle:=0.000000, EndAngle:=90.000000, NumPatterns:=1
+PatternTool.RunVCS   X:=0, Y:=0, W:=640, H:=480
+Deflect = Measure.EndMeas  '未找到圖案時，Deflect = 0
+
+'若找到圖案（OK不等於0）
+if Deflect <> 0 then
+Exit for '跳出內迴圈
+end if
+
+next
+
+'若找到圖案（OK不等於0）
+if Deflect <> 0 then
+Exit for  '跳出外迴圈
+end if
+
+next
+
+
+PCS.AlignOrigin   Axes:=ALL_AXES, Tag:="點-1" & count
+
+
+End Sub   'QVBlock_2
+
+
+
+Private Sub QVBlock_Change_Light
+
+ If Light_setting = 1 Then
+
+  Big_TH = 85
+  Big_THR = 0.08
+  Big_THS = 13
+  Small_TH = 180
+  Small_THR = 0.57
+  Small_THS = 35
+  ring_value = 0.3
+  Angle_Height = 0.4
+  PT_add = ""
+
+Elseif Light_setting = 2
+
+  Big_TH = 85
+  Big_THR = 0.08
+  Big_THS = 13
+  Small_TH = 180
+  Small_THR = 0.57
+  Small_THS = 35
+  ring_value = 0.3
+  Angle_Height = 0.4
+  PT_add = ""
+
+ End If
+
+
+End Sub   'QVBlock_Change_Light
+
+
+
+
+Private Sub QVBlock_3
+
+Measure.Circle Label:="End", ProjPlane:=NO_PLANE, Outlier:=0
+Video.ChangeToImageContext   X:=step3_x, Y:=step3_y, Z:=step3_z, Coax:=Coax_value, Stage:=stage_value, Back:=ring_value, Front:=ring_value, Right:=ring_value, Left:=ring_value, Angle:=Angle_Light, Color:= qvRed, NomMag:=5.000000
+FocusTool.SetMode   FocusType:=SURFACE_ROTATE, Speed:=MED, Range:=5.000000000
+FocusTool.Run  X:=step3_x, Y:=step3_y, W:=focus_w, H:=focus_h, Angle:=Angle_Light
+CentroidTool.SetFilter   Alg:=DYNAMIC_THRESH, THLow:=0.928571, THHigh:=1.000000, THSize:=0.001697
+CentroidTool.Run   X:=step3_x, Y:=step3_y, W:=0.086123519, H:=0.046975234, Angle:=Angle_Light
+Measure.EndMeas
+
+
+End Sub   'QVBlock_3
+
+
+
+
+Private Sub QVBlock_4
+
+Video.ChangeToImageContext   X:=step3_x, Y:=step3_y, Coax:=Coax_value, Stage:=0.00, Back:=ring_value, Front:=ring_value, Right:=ring_value, Left:=ring_value, Angle:=Angle_Light, Color:= qvRed, NomMag:=5.000000
+
+
+'尋找靶點
+for o = -3 to 5
+for w = -3 to 5
+
+count = count+1     '從1開始計數 
+
+Measure.Point Label:="點-2" & count, ProjPlane:=NO_PLANE, PointType:=AVERAGE_POINT
+PatternTemplate.Import   PT_address
+
+'鏡頭畫面為「原始座標+隨著迴圈參數改變固定位移」
+'o,w隨迴圈移動，一次移動半個畫面（0.5*dx, 0.5*dy）
+'此為鏡頭往上&往右尋找
+Video.ChangeToImageContext   X:=step3_x+dx*0.25*o, Y:=step3_y+dy*0.25*w, Coax:=Coax_value, Stage:=stage_value, Back:=ring_value, Front:=ring_value, Right:=ring_value, Left:=ring_value, Angle:=Angle_Light, Color:= qvRed, NomMag:=5.000000
+
+PatternTool.SetMode   Speed:=2, Accuracy:=1, CertaintyThr:=46, AcceptThr:=46, StartAngle:=0.000000, EndAngle:=90.000000, NumPatterns:=1
+PatternTool.RunVCS   X:=0, Y:=0, W:=640, H:=480
+Deflect = Measure.EndMeas  '未找到圖案時，Deflect = 0
+
+'若找到圖案（OK不等於0）
+if Deflect <> 0 then
+Exit for '跳出內迴圈
+end if
+
+next
+
+'若找到圖案（OK不等於0）
+if Deflect <> 0 then
+Exit for  '跳出外迴圈
+end if
+
+next
+
+
+
+Measure.EndMeas
+
+
+PCS.AlignAxis   AlignmentAxis:=X_AXIS, RotationAxis:=Z_AXIS, Offset:=0.000000000, Direction:=POS, Tag:="點-2" & count
+
+PCS.AlignOrigin  Axes:= ALL_AXES, Tag:= "點-1"
+
+
+
+End Sub   'QVBlock_4
+
+
+
+
+
+Private Sub QVBlock_5
+
+Measure.Circle Label:="圓-4[,]", ProjPlane:=NO_PLANE, Outlier:=0
+
+Video.ChangeToImageContext   X:=Location_x, Y:=Location_y, Z:=0, Coax:=coax_value, Stage:=stage_value, Back:=ring_value, Front:=ring_value, Right:=ring_value, Left:=ring_value, Angle:=Angle_Height, Color:= qvRed, NomMag:=10.000000
+
+FocusTool.SetMode   FocusType:=SURFACE_ROTATE, Speed:=FAST, Range:=5.000000000
+FocusTool.Focus   X:=Location_x, Y:=Location_y, Z:=0, W:=focus_W, H:=focus_H, Angle:=0.00000000
+CircleTool.SetFilter   Alg:=DYNAMIC_THRESH, EdgeSlope:=RISING, EdgeQuality:=WEAK, TH:=Big_TH, THR:=Big_THR, THS:=Big_THS, Outlier:=5.000000, ScanInt:=2, ScanIntUnits:=PIXELS, SamplingDirection:=CW
+CircleTool.Run   X:=Location_x, Y:=Location_y, Z:=0, R1:=Big_R1, R2:=Big_R2
+Measure.EndMeas
+
+
+PCS.AlignOrigin   Axes:=ALL_AXES, Tag:="圓-4[,]"
+
+End Sub   'QVBlock_5
+
+
+
+
+Private Sub QVBlock_6
+
+Measure.Circle Label:="Pad[,]", ProjPlane:=NO_PLANE, Outlier:=0
+
+Video.ChangeToImageContext   X:=0, Y:=0, Z:=0
+
+CircleTool.SetFilter   Alg:=DYNAMIC_THRESH, EdgeSlope:=RISING, EdgeQuality:=WEAK, TH:=Big_TH, THR:=Big_THR, THS:=Big_THS, Outlier:=5.000000, ScanInt:=2, ScanIntUnits:=PIXELS, SamplingDirection:=CW
+CircleTool.Run   X:=0, Y:=0, Z:=0, R1:=Big_R1, R2:=Big_R2
+
+Measure.EndMeas
+End Sub   'QVBlock_6
+
+
+
+Private Sub QVBlock_7
+
+
+Measure.Circle Label:="Via[,]", ProjPlane:=NO_PLANE, Outlier:=0
+
+FocusTool.SetMode   FocusType:=SURFACE_ROTATE, Speed:=FAST, Range:=0.500000000
+FocusTool.Focus   X:=0, Y:=0, Z:=0, W:=0.173140941, H:=0.163324802, Angle:=0.000000000
+
+
+CircleTool.SetFilter   Alg:=DYNAMIC_THRESH, EdgeSlope:=RISING, EdgeQuality:=WEAK, TH:=Small_TH, THR:=Small_THR, THS:=Small_THS, Outlier:=5.000000, ScanInt:=2, ScanIntUnits:=PIXELS, SamplingDirection:=CW
+CircleTool.Run   X:=0, Y:=0, Z:=0,  R1:=Small_R1, R2:=Small_R2
+Measure.EndMeas
+
+
+Construct.Distance   Tag1:="Pad[,]", Tag2:="Via[,]", Label:=IPPName & "[,]", ProjPlane:=XY_PLANE
+FeatureDB(IPPName & "[,]").SetDistNoms   SC:=0.000000000, SS:=0.000000000, SL:=0.000000000,   _
+                               LC:=0.000000000, LS:=0.000000000, LL:=0.000000000,   _
+                               DX:=0.000000000, DY:=0.000000000, DZ:=0.000000000
+FeatureDB(IPPName & "[,]").LC.SetTol   Tag:="上下限公差-1"
+Results.ReportFeature   Show:=LC_, Tag:=IPPName & "[,]"
+
+
+'Print "           dx = " & format(dxx, "0.######") & "               dy = " & format(dyy, "0.######")    '資料output dx & dy
+
+'####################################################資料放置於Excel################################################################
+
+
+temp=FeatureDB(IPPName & "[,]").LC.actual
+
+dxx=FeatureDB(IPPName & "[,]").DX.actual   ' 資料轉換
+dyy=FeatureDB(IPPName & "[,]").DY.actual   ' 資料轉換
+xcl.Sheets("raw data").cells(RawNO,2)=PartNO
+xcl.Sheets("raw data").cells(RawNO,3)=LotNO
+xcl.Sheets("raw data").cells(RawNO,4)=PanelNO
+
+   If i > 9 Then
+   xcl.Sheets("raw data").cells(RawNO,5)="L" & i
+   End If
+   
+   If i <10 Then
+   xcl.Sheets("raw data").cells(RawNO,5)="L0" & i
+   End If
+
+xcl.Sheets("raw data").cells(RawNO,6)=IPPName
+xcl.Sheets("raw data").cells(RawNO,7)=format(spec*1000, "0.###")
+xcl.Sheets("raw data").cells(RawNO,8).value=format(FeatureDB(IPPName & "[,]").LC.actual*1000,"0.###")       '單位換成um & 小數點三位數
+
+
+
+xcl.Sheets("raw data").cells(RawNO,9).value=format(FeatureDB(IPPName & "[,]").DX.actual*1000,"0.###")
+xcl.Sheets("raw data").cells(RawNO,10).value=format(FeatureDB(IPPName & "[,]").DY.actual*1000,"0.###")
+xcl.Sheets("raw data").cells(RawNO,11).value=format((FeatureDB("Pad[,]").D.actual-0.5*FeatureDB("Pad[,]").CR.actual)/(FeatureDB("Pad[,]").D.actual+0.5*FeatureDB("Pad[,]").CR.actual),"0.###")             '單位換成um & 小數點三位數
+xcl.Sheets("raw data").cells(RawNO,12).value=format((FeatureDB("Via[,]").D.actual-0.5*FeatureDB("Via[,]").CR.actual)/(FeatureDB("Via[,]").D.actual+0.5*FeatureDB("Via[,]").CR.actual),"0.###")
+
+xcl.Sheets("raw data").cells(RawNO,13).value=Date
+xcl.Sheets("raw data").cells(RawNO,14).value=Time
+xcl.Sheets("raw data").cells(RawNO,25).value="OK"
+
+roundness_Pad=FeatureDB("Pad[,]").CR.actual
+roundness_Via=FeatureDB("Via[,]").CR.actual
+
+End Sub   'QVBlock_7
